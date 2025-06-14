@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; width: 250px; padding: 10px; }
+    fieldset { border: 1px solid #ccc; margin-top: 10px; }
+    label { display: block; margin: 5px 0; }
+    textarea { width: 95%; }
+    button { width: 100%; padding: 8px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h3>Conductor AI</h3>
+  <textarea id="prompt-input" rows="5" placeholder="Enter your prompt..."></textarea>
+  
+  <fieldset>
+    <legend>Platforms</legend>
+    <!--
+      CORRECTION: The 'value' attribute provides the clean, canonical key for each platform.
+      This is what gets sent to the background script.
+    -->
+    <label><input type="checkbox" name="platform" value="chatgpt" checked> ChatGPT</label>
+    <label><input type="checkbox" name="platform" value="claude" checked> Claude</label>
+  </fieldset>
+  
+  <button id="run-button">Run Workflow</button>
+  <div id="status-display"></div>
+  <pre id="results-display"></pre>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
+
