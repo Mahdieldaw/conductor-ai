@@ -1,13 +1,7 @@
-/**
- * Defines a centralized set of constants for message types used throughout
- * the extension. This prevents typos and makes the communication protocol
- * explicit and easier to manage.
- */
+// src/shared/messaging.js
 export const MSG = {
-  // Message from Popup -> Background to start the orchestration
+  // Popup -> Background
   START_WORKFLOW: 'START_WORKFLOW',
-
-  // Message from Background -> Popup to provide a final update
+  // Background -> Popup
   WORKFLOW_UPDATE: 'WORKFLOW_UPDATE',
 };
-

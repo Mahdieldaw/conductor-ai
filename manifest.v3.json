@@ -1,37 +1,31 @@
 {
   "manifest_version": 3,
-  "name": "Conductor AI MVP",
+  "name": "Conductor AI",
   "version": "0.1.0",
-  "description": "Orchestrates prompts across multiple AI platforms.",
-
-  "permissions": [
-    "storage",
-    "tabs"
-  ],
-
-  "host_permissions": [
-    "*://chatgpt.com/*",
-    "*://claude.ai/*"
-  ],
-
+  "description": "Orchestrate prompts across multiple AI platforms.",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Conductor AI"
   },
-
   "background": {
     "service_worker": "background.js"
   },
-
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://chatgpt.com/*",
+    "*://claude.ai/*"
+  ],
   "content_scripts": [
     {
       "matches": [
         "*://chatgpt.com/*",
         "*://claude.ai/*"
       ],
-      "js": [
-        "content.js"
-      ],
+      "js": ["content.js"],
       "run_at": "document_idle"
     }
   ]
