@@ -5,13 +5,17 @@ export class ClaudeAsk {
   static async broadcast(prompt) {
     const input = await waitForElement('div.ProseMirror');
     input.focus();
-    // Use execCommand for contenteditable divs
+    
+    // Use execCommand for Claude's rich text editor
     document.execCommand('selectAll', false, null);
     document.execCommand('insertText', false, prompt);
 
-    await new Promise(resolve => setTimeout(resolve, 200)); // Wait for button to enable
+    // Give the UI a moment to enable the button
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-    const button = await waitForElement('button[aria-label="Send Message"]:not(:disabled)');
+    // For Claude, the button is generally reliable, we just need to wait for it.
+    // We will increase the timeout here to be more patient.
+    const button = await waitForElement('button[aria-label="Send Message"]:not(:disabled)', 7000); // Be more patient (7s)
     button.click();
   }
 }

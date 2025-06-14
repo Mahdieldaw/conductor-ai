@@ -1,12 +1,18 @@
-// src/content/content.js
+// src/content/content.js (REPLACE the whole file)
+
 import { ChatGPTAsk } from './providers/ChatGPT.js';
 import { ClaudeAsk } from './providers/Claude.js';
 import { ContentStateDetector } from './primitives/ContentStateDetector.js';
 
 function identifyCurrentPlatform() {
   const { hostname } = window.location;
-  if (hostname.includes('chatgpt.com')) return 'chatgpt';
-  if (hostname.includes('claude.ai')) return 'claude';
+  // FIX: Now correctly identifies 'chatgpt.com' OR 'openai.com'
+  if (hostname.includes('chatgpt.com') || hostname.includes('openai.com')) {
+    return 'chatgpt';
+  }
+  if (hostname.includes('claude.ai')) {
+    return 'claude';
+  }
   return null;
 }
 
@@ -15,7 +21,7 @@ const platformKey = identifyCurrentPlatform();
 const actions = {
   chatgpt: {
     broadcast: (prompt) => ChatGPTAsk.broadcast(prompt),
-    harvest: () => ContentStateDetector.waitForComplete('chatgpt'), // Corrected key
+    harvest: () => ContentStateDetector.waitForComplete('chatgpt'),
   },
   claude: {
     broadcast: (prompt) => ClaudeAsk.broadcast(prompt),
