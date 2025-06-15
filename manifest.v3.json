@@ -1,12 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Conductor AI",
+  "name": "Sidecar Extension MVP",
   "version": "0.1.0",
-  "description": "Orchestrate prompts across multiple AI platforms.",
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "Conductor AI"
-  },
+  "description": "Sidecar extension to connect a web app with LLMs.",
   "background": {
     "service_worker": "background.js"
   },
@@ -28,5 +24,11 @@
       "js": ["content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "externally_connectable": {
+    "matches": [
+      "*://localhost/*",
+      "*://your-hybrid-thinking-domain.com/*"
+    ]
+  }
 }

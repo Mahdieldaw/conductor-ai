@@ -1,82 +1,114 @@
 // src/background/service-worker.js
-import { MSG } from '../shared/messaging.js';
+import { MSG_TYPE } from '../shared/messaging.js';
 
-// Maps the key from the popup to the URL pattern needed for tab queries.
+// Phase 3: Tab Registry and Lifecycle Management
+const tabRegistry = new Map(); // e.g., 'chatgpt' -> { tabId: 123, status: 'ready' }
 const platformURLPatterns = {
-  'chatgpt': '*://chatgpt.com/*',
-  'claude': '*://claude.ai/*'
+  chatgpt: '*://chatgpt.com/*',
+  claude: '*://claude.ai/*',
 };
+const platformKeys = Object.keys(platformURLPatterns);
 
-// A robust, promise-based function to send messages to content scripts.
-const sendMessageToTab = (tabId, message) => {
-  return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, message, (response) => {
-      if (chrome.runtime.lastError) {
-        return reject(new Error(chrome.runtime.lastError.message));
+async function findAndRegisterTabs() {
+  console.log('SIDE-CAR: Initializing tab registry...');
+  for (const platform of platformKeys) {
+    const urlPattern = platformURLPatterns[platform];
+    try {
+      const tabs = await chrome.tabs.query({ url: urlPattern, status: 'complete' });
+      if (tabs.length > 0) {
+        const tab = tabs[0]; // Assume first found tab is the target
+        tabRegistry.set(platform, { tabId: tab.id, status: 'ready' });
+        console.log(`SIDE-CAR: Registered ${platform} tab: ${tab.id}`);
       }
-      if (response && response.status === 'failed') {
-        return reject(new Error(response.error || 'Content script reported a failure.'));
-      }
-      resolve(response);
-    });
-  });
-};
-
-async function handleStartWorkflow({ prompt, platforms }) {
-  const workflowId = `wf_${Date.now()}`;
-  console.log(`BACKGROUND: Starting workflow ${workflowId}`);
-
-  // --- NEW: Send an initial "working" message ---
-  chrome.runtime.sendMessage({
-    type: MSG.STATUS_UPDATE,
-    payload: { message: `Broadcasting to ${platforms.length} platform(s)...` }
-  });
-
-  const allPlatformPromises = platforms.map(async (platformKey) => {
-    const urlPattern = platformURLPatterns[platformKey];
-    if (!urlPattern) throw new Error(`Unknown platform key '${platformKey}'`);
-
-    const tabs = await chrome.tabs.query({ url: urlPattern, status: 'complete' });
-    if (tabs.length === 0) throw new Error('Tab not found.');
-    const tabId = tabs[0].id;
-    
-    // Broadcast...
-    await sendMessageToTab(tabId, { type: 'EXECUTE_BROADCAST', payload: { prompt } });
-    
-    // --- NEW: Send a "harvesting" message for this specific platform ---
-    chrome.runtime.sendMessage({
-      type: MSG.STATUS_UPDATE,
-      payload: { message: `Harvesting from ${platformKey}...` }
-    });
-
-    // Harvest...
-    const harvestResponse = await sendMessageToTab(tabId, { type: 'EXECUTE_HARVEST' });
-    return harvestResponse.data;
-  });
-
-  const settledResults = await Promise.allSettled(allPlatformPromises);
-  const finalResults = {};
-
-  settledResults.forEach((result, index) => {
-    const platformKey = platforms[index];
-    if (result.status === 'fulfilled') {
-      finalResults[platformKey] = result.value;
-    } else {
-      finalResults[platformKey] = `Failed: ${result.reason.message}`;
+    } catch (e) {
+      console.error(`Error querying for ${platform}:`, e.message);
     }
-  });
-
-  const finalState = { id: workflowId, status: 'complete', results: finalResults };
-  console.log(`BACKGROUND: Workflow ${workflowId} complete.`, finalState);
-
-  await chrome.storage.local.set({ 'lastWorkflowResult': finalState });
-  // Send the FINAL update, which will replace the status message with the results.
-  chrome.runtime.sendMessage({ type: MSG.WORKFLOW_UPDATE, payload: finalState });
+  }
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === MSG.START_WORKFLOW) {
-    handleStartWorkflow(message.payload);
-    return true; // Keep channel open for async response
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    for (const platform of platformKeys) {
+      if (platform === 'chatgpt' && tab.url.includes('chatgpt.com')) {
+        tabRegistry.set(platform, { tabId, status: 'ready' });
+        console.log(`SIDE-CAR: Registered/Updated ${platform} tab: ${tabId}`);
+      }
+      if (platform === 'claude' && tab.url.includes('claude.ai')) {
+        tabRegistry.set(platform, { tabId, status: 'ready' });
+        console.log(`SIDE-CAR: Registered/Updated ${platform} tab: ${tabId}`);
+      }
+    }
   }
 });
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const [platform, registryEntry] of tabRegistry.entries()) {
+    if (registryEntry.tabId === tabId) {
+      tabRegistry.delete(platform);
+      console.log(`SIDE-CAR: Unregistered ${platform} tab: ${tabId}`);
+      break;
+    }
+  }
+});
+
+// Run registration on startup
+chrome.runtime.onStartup.addListener(findAndRegisterTabs);
+// And when the extension is installed/reloaded
+findAndRegisterTabs();
+
+// Phase 0: External Message Listener
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  console.log('SIDE-CAR: Received message from:', sender.origin, message);
+
+  if (message.type === MSG_TYPE.PING) {
+    sendResponse({
+      status: 'PONG',
+      version: '0.1.0',
+      registeredTabs: Object.fromEntries(tabRegistry),
+    });
+    return; // Synchronous response
+  }
+
+  if (message.type === MSG_TYPE.EXECUTE_PROMPT) {
+    const { platform, prompt } = message.payload;
+    handleExecutePrompt(platform, prompt)
+      .then(sendResponse)
+      .catch((error) => {
+        console.error('SIDE-CAR: Error in handleExecutePrompt:', error);
+        sendResponse({ status: 'failed', error: error.message });
+      });
+    return true; // Indicate async response
+  }
+});
+
+// Phase 1 & 2: Prompt Execution and Harvesting
+async function handleExecutePrompt(platform, prompt) {
+  const registryEntry = tabRegistry.get(platform);
+  if (!registryEntry) {
+    throw new Error(`Tab for platform '${platform}' not found or registered.`);
+  }
+  const { tabId } = registryEntry;
+
+  console.log(`SIDE-CAR: Executing prompt on ${platform} (tab: ${tabId})`);
+
+  // 1. Broadcast the prompt
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (promptToBroadcast) => window.sidecar.broadcast(promptToBroadcast),
+    args: [prompt],
+  });
+
+  console.log(`SIDE-CAR: Prompt sent to ${platform}, now harvesting...`);
+
+  // 2. Harvest the result
+  const harvestResults = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => window.sidecar.harvest(),
+  });
+
+  // executeScript returns an array of results, we want the main frame's.
+  const result = harvestResults[0].result;
+  console.log(`SIDE-CAR: Harvest complete from ${platform}.`, result);
+
+  return { status: 'complete', response: result };
+}

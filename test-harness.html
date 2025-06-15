@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sidecar Extension Test Harness</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          sans-serif;
+        max-width: 800px;
+        margin: 2em auto;
+        line-height: 1.6;
+      }
+      textarea {
+        width: 100%;
+        min-height: 150px;
+        box-sizing: border-box;
+      }
+      pre {
+        background-color: #f4f4f4;
+        padding: 1em;
+        border-radius: 4px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        border: 1px solid #ddd;
+      }
+      .controls,
+      fieldset {
+        border: 1px solid #ccc;
+        padding: 1em;
+        border-radius: 4px;
+        margin-bottom: 1em;
+      }
+      button {
+        padding: 8px 12px;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        cursor: pointer;
+      }
+      #ping-btn {
+        background-color: #6c757d;
+        color: white;
+      }
+      #execute-btn {
+        background-color: #007bff;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sidecar Extension Test Harness</h1>
+    <p>This page simulates your web app. To use it:</p>
+    <ol>
+      <li>Load the unpacked extension in your browser.</li>
+      <li>
+        Go to <code>chrome://extensions</code>, find the "Sidecar Extension MVP",
+        and copy its ID.
+      </li>
+      <li>Paste the ID into the input field below.</li>
+      <li>Open tabs for ChatGPT and Claude and log in.</li>
+      <li>Use the buttons to interact with the extension.</li>
+    </ol>
+    <hr />
+
+    <div class="controls">
+      <label>Extension ID: <input type="text" id="extension-id" size="40" /></label>
+      <button id="ping-btn">Ping Extension</button>
+    </div>
+
+    <fieldset>
+      <legend>Execute Prompt</legend>
+      <label for="platform-select">Target Platform:</label>
+      <select id="platform-select">
+        <option value="chatgpt">ChatGPT</option>
+        <option value="claude">Claude</option>
+      </select>
+      <br /><br />
+      <label for="prompt-input">Prompt:</label>
+      <textarea id="prompt-input">
+Write a short story about a brave toaster.</textarea
+      >
+      <br /><br />
+      <button id="execute-btn">Execute Prompt</button>
+    </fieldset>
+
+    <h3>Last Response:</h3>
+    <pre id="response-output">No response yet.</pre>
+
+    <script>
+      const extensionIdInput = document.getElementById('extension-id');
+      const pingBtn = document.getElementById('ping-btn');
+      const executeBtn = document.getElementById('execute-btn');
+      const responseOutput = document.getElementById('response-output');
+      const platformSelect = document.getElementById('platform-select');
+      const promptInput = document.getElementById('prompt-input');
+
+      // Try to load from local storage
+      extensionIdInput.value = localStorage.getItem('sidecarExtensionId') || '';
+
+      function logResponse(data) {
+        console.log('Response from extension:', data);
+        responseOutput.textContent = JSON.stringify(data, null, 2);
+      }
+
+      pingBtn.addEventListener('click', () => {
+        const extensionId = extensionIdInput.value.trim();
+        if (!extensionId) {
+          alert('Please enter the Extension ID.');
+          return;
+        }
+        localStorage.setItem('sidecarExtensionId', extensionId);
+
+        responseOutput.textContent = 'Pinging...';
+        chrome.runtime.sendMessage(
+          extensionId,
+          { type: 'PING' },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              logResponse({ error: chrome.runtime.lastError.message });
+            } else {
+              logResponse(response);
+            }
+          }
+        );
+      });
+
+      executeBtn.addEventListener('click', () => {
+        const extensionId = extensionIdInput.value.trim();
+        if (!extensionId) {
+          alert('Please enter the Extension ID.');
+          return;
+        }
+        localStorage.setItem('sidecarExtensionId', extensionId);
+
+        const payload = {
+          platform: platformSelect.value,
+          prompt: promptInput.value,
+        };
+
+        responseOutput.textContent = `Executing on ${payload.platform}...`;
+        chrome.runtime.sendMessage(
+          extensionId,
+          { type: 'EXECUTE_PROMPT', payload },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              logResponse({ error: chrome.runtime.lastError.message });
+            } else {
+              logResponse(response);
+            }
+          }
+        );
+      });
+    </script>
+  </body>
+</html>
