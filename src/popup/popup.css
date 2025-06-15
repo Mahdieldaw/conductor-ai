@@ -1,4 +1,3 @@
-
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background-color: #f4f4f9;
@@ -88,16 +87,18 @@ fieldset legend {
   color: #555;
 }
 
-.results {
+/* This rule directly targets the <pre> tag with the id="results-display" */
+#results-display {
   margin-top: 8px;
   background-color: #e9e9f3;
   border: 1px solid #d1d1e0;
   border-radius: 6px;
   padding: 10px;
   font-size: 12px;
-  white-space: pre-wrap; /* Preserves whitespace, wraps at newlines and as needed */
-  overflow-wrap: break-word; /* Breaks long words to prevent overflow */
+  
+  /* --- THE CORE FIX FOR WRAPPING AND SCROLLING --- */
+  white-space: pre-wrap;
+  word-wrap: break-word;
   max-height: 200px;
   overflow-y: auto;
-  overflow-x: auto;      /* This adds a horizontal scrollbar if needed */
 }

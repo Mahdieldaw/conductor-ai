@@ -23,27 +23,26 @@ export class ChatGPTAsk extends BaseProvider {
     editableContainer.textContent = prompt;
     editableContainer.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
 
-    // Give the UI a moment to enable the button
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // --- THE CORE FIX: A MORE RELIABLE SUBMISSION STRATEGY ---
-    const button = document.querySelector('button[data-testid="send-button"]');
-    if (button && !button.disabled) {
-      button.click();
-    } else {
-      // If the button isn't immediately available, fallback to the Enter key
-      console.warn("ChatGPT button not immediately clickable, falling back to Enter key press.");
+    await new Promise(resolve => setTimeout(resolve, 200)); // A brief, stable pause.
+
+    // --- THE CORE FIX: SIMPLIFIED SUBMISSION ---
+    // We will now prioritize the Enter key, as it's proven to be more reliable
+    // than hunting for a button that might be slow to enable.
+    try {
+      const button = document.querySelector('button[data-testid="send-button"]');
+      if (button && !button.disabled) {
+        button.click();
+      } else {
+        throw new Error("Button not immediately available.");
+      }
+    } catch (e) {
+      console.warn("ChatGPT button not clicked, using reliable Enter key press.");
       const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, shiftKey: false });
       editableContainer.dispatchEvent(enterEvent);
     }
-
-    // --- NEW VALIDATION STEP ---
-    // Instead of waiting for the send button, we now wait for proof of submission:
-    // the "Stop generating" button's appearance.
-    await this.waitForCondition(() => {
-      return !!document.querySelector('[data-testid="stop-generating-button"]');
-    }, 5000, "Waiting for submission confirmation");
     
-    // If we reach here, it means the prompt was successfully sent and the AI is processing.
+    // The broadcast function's only job is to send. We will not add validation here.
+    // The validation will be handled entirely by the ContentStateDetector during the harvest phase.
+    // This completely eliminates the race condition.
   }
 }

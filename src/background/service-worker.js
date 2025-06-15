@@ -26,55 +26,51 @@ async function handleStartWorkflow({ prompt, platforms }) {
   const workflowId = `wf_${Date.now()}`;
   console.log(`BACKGROUND: Starting workflow ${workflowId}`);
 
+  // --- NEW: Send an initial "working" message ---
+  chrome.runtime.sendMessage({
+    type: MSG.STATUS_UPDATE,
+    payload: { message: `Broadcasting to ${platforms.length} platform(s)...` }
+  });
+
   const allPlatformPromises = platforms.map(async (platformKey) => {
-    // This part remains the same: we try to run the workflow for each platform.
-    // It will return a result on success or throw an error on failure.
     const urlPattern = platformURLPatterns[platformKey];
-    if (!urlPattern) {
-      throw new Error(`Unknown platform key '${platformKey}'`);
-    }
+    if (!urlPattern) throw new Error(`Unknown platform key '${platformKey}'`);
 
     const tabs = await chrome.tabs.query({ url: urlPattern, status: 'complete' });
-    if (tabs.length === 0) {
-      throw new Error('Tab not found. Please open and log in.');
-    }
+    if (tabs.length === 0) throw new Error('Tab not found.');
     const tabId = tabs[0].id;
-
+    
+    // Broadcast...
     await sendMessageToTab(tabId, { type: 'EXECUTE_BROADCAST', payload: { prompt } });
+    
+    // --- NEW: Send a "harvesting" message for this specific platform ---
+    chrome.runtime.sendMessage({
+      type: MSG.STATUS_UPDATE,
+      payload: { message: `Harvesting from ${platformKey}...` }
+    });
+
+    // Harvest...
     const harvestResponse = await sendMessageToTab(tabId, { type: 'EXECUTE_HARVEST' });
     return harvestResponse.data;
   });
 
-  // --- THE CORE UPGRADE ---
-  // Use Promise.allSettled to wait for all promises to complete, regardless of success or failure.
   const settledResults = await Promise.allSettled(allPlatformPromises);
-  
   const finalResults = {};
 
-  // Loop through the settled results and process them.
   settledResults.forEach((result, index) => {
-    const platformKey = platforms[index]; // Get the platform key corresponding to this result.
-
+    const platformKey = platforms[index];
     if (result.status === 'fulfilled') {
-      // It succeeded! Save the value.
-      console.log(`BACKGROUND: ${platformKey} succeeded.`);
       finalResults[platformKey] = result.value;
     } else {
-      // It failed. Save the error message.
-      console.error(`BACKGROUND: ${platformKey} failed:`, result.reason);
       finalResults[platformKey] = `Failed: ${result.reason.message}`;
     }
   });
-  // --- END OF UPGRADE ---
 
   const finalState = { id: workflowId, status: 'complete', results: finalResults };
   console.log(`BACKGROUND: Workflow ${workflowId} complete.`, finalState);
 
-  // --- ADD THIS LINE ---
-  // Save the final result to local storage for persistence.
   await chrome.storage.local.set({ 'lastWorkflowResult': finalState });
-  // --- END OF ADDITION ---
-
+  // Send the FINAL update, which will replace the status message with the results.
   chrome.runtime.sendMessage({ type: MSG.WORKFLOW_UPDATE, payload: finalState });
 }
 

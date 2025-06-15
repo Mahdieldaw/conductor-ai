@@ -59,7 +59,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // The listener for live updates from the background script
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === MSG.WORKFLOW_UPDATE) {
+    // --- UPDATE THIS BLOCK ---
+    if (message.type === MSG.STATUS_UPDATE) {
+      // This is an intermediate status update.
+      statusDisplay.textContent = message.payload.message;
+      // We don't touch the results or the button here.
+    } else if (message.type === MSG.WORKFLOW_UPDATE) {
+      // This is the final update with all the results.
       updateUI(message.payload);
     }
   });
