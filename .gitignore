@@ -13,7 +13,7 @@ local.properties
 .settings/
 .loadpath
 .project
-
+.md
 # External tool builders
 .externalToolBuilders/
 
