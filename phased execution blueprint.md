@@ -175,3 +175,210 @@ Phase 8 ─► Add shortcuts & KB integrations
 
 
 Follow that order, and you’ll layer each capability cleanly—minimizing rework and ensuring that every piece (from low‑level DOM hacks to high‑level user workflows) slots neatly into place.
+
+
+
+
+
+
+. Create src/content/providers/BaseProvider.js:
+// src/content/providers/BaseProvider.js
+export class BaseProvider {
+  constructor(config) {
+    this.config = config;
+    this.maxRetries = config.maxRetries || 3;
+    this.baseTimeout = config.baseTimeout || 5000;
+  }
+
+  async waitForCondition(conditionFn, timeout = this.baseTimeout, interval = 100) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      if (await conditionFn()) return true;
+      await new Promise(resolve => setTimeout(resolve, interval));
+    }
+    throw new Error(`Condition not met within ${timeout}ms`);
+  }
+
+  async retryOperation(operation, context = '') {
+    let lastError;
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        console.warn(`${context} - Attempt ${attempt}/${this.maxRetries} failed:`, error.message);
+        if (attempt < this.maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, attempt * 500)); // Adjusted backoff
+        }
+      }
+    }
+    throw new Error(`${context} - All ${this.maxRetries} attempts failed. Last error: ${lastError.message}`);
+  }
+}
+Use code with caution.
+JavaScript
+B. Create src/content/providers/ProviderFactory.js:
+// src/content/providers/ProviderFactory.js
+import { ChatGPTAsk } from './ChatGPT.js';
+import { ClaudeAsk } from './Claude.js';
+
+export class ProviderFactory {
+  static getProvider(hostname) {
+    // This map provides a single place to manage which domains map to which provider classes.
+    const providerMap = {
+      'chat.openai.com': ChatGPTAsk,
+      'chatgpt.com': ChatGPTAsk,
+      'claude.ai': ClaudeAsk,
+      'console.anthropic.com': ClaudeAsk
+    };
+
+    // Find a match based on the hostname including the key.
+    const matchingKey = Object.keys(providerMap).find(key => hostname.includes(key));
+    const Provider = providerMap[matchingKey];
+
+    if (!Provider) {
+      throw new Error(`No provider found for hostname: ${hostname}`);
+    }
+
+    return Provider;
+  }
+
+  static async broadcast(hostname, prompt) {
+    const Provider = this.getProvider(hostname);
+    // The static broadcast method on the provider will handle creating an instance and running.
+    return Provider.broadcast(prompt);
+  }
+}
+Use code with caution.
+JavaScript
+Step 2: Replace the Existing Provider Files
+Now, update ChatGPT.js and Claude.js with their new, more advanced versions.
+A. Replace src/content/providers/ChatGPT.js:
+// src/content/providers/ChatGPT.js
+import { waitForElement } from '../primitives/helpers.js';
+import { BaseProvider } from './BaseProvider.js';
+
+export class ChatGPTAsk extends BaseProvider {
+  constructor() {
+    super({
+      maxRetries: 2,
+      baseTimeout: 8000
+    });
+  }
+
+  static async broadcast(prompt) {
+    const instance = new ChatGPTAsk();
+    return instance.retryOperation(() => instance._broadcast(prompt), 'ChatGPT broadcast');
+  }
+
+  async _broadcast(prompt) {
+    const input = await waitForElement(
+      'textarea#prompt-textarea, textarea[placeholder*="Message"]',
+      this.baseTimeout
+    );
+    
+    input.focus();
+    input.value = prompt;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const buttonSelectors = [
+      'button[data-testid="send-button"]:not(:disabled)',
+      'button[aria-label*="Send"]:not(:disabled)',
+    ];
+
+    let button = null;
+    for (const selector of buttonSelectors) {
+      try {
+        button = await waitForElement(selector, 2000);
+        if (button) break;
+      } catch (e) { continue; }
+    }
+
+    if (button) {
+      button.click();
+    } else {
+      console.warn("Button not found, using keyboard submission");
+      input.focus();
+      const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, shiftKey: false });
+      input.dispatchEvent(enterEvent);
+    }
+  }
+}
+Use code with caution.
+JavaScript
+B. Replace src/content/providers/Claude.js:
+// src/content/providers/Claude.js
+import { waitForElement } from '../primitives/helpers.js';
+import { BaseProvider } from './BaseProvider.js';
+
+export class ClaudeAsk extends BaseProvider {
+  constructor() {
+    super({
+      maxRetries: 2,
+      baseTimeout: 10000
+    });
+  }
+
+  static async broadcast(prompt) {
+    const instance = new ClaudeAsk();
+    return instance.retryOperation(() => instance._broadcast(prompt), 'Claude broadcast');
+  }
+
+  async _broadcast(prompt) {
+    const input = await waitForElement('div.ProseMirror', this.baseTimeout);
+    input.focus();
+
+    document.execCommand('selectAll', false, null);
+    document.execCommand('insertText', false, prompt);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    await this.waitForCondition(() => {
+      return (input.textContent || '').trim().length > 0;
+    }, 3000);
+
+    const button = await waitForElement('button[aria-label="Send Message"]:not(:disabled)', 5000);
+    button.click();
+  }
+}
+Use code with caution.
+JavaScript
+Step 3: Refactor content.js to Use the Factory
+This is the final and most important step. We simplify content.js significantly by letting the ProviderFactory do the heavy lifting.
+Replace src/content/content.js:
+// src/content/content.js
+import { ProviderFactory } from './providers/ProviderFactory.js';
+import { ContentStateDetector } from '../primitives/ContentStateDetector.js';
+
+function identifyCurrentPlatform() {
+  const { hostname } = window.location;
+  if (hostname.includes('openai.com') || hostname.includes('chatgpt.com')) return 'chatgpt';
+  if (hostname.includes('claude.ai') || hostname.includes('console.anthropic.com')) return 'claude';
+  return null;
+}
+
+const platformKey = identifyCurrentPlatform();
+
+if (platformKey) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const handle = async () => {
+      try {
+        if (message.type === 'EXECUTE_BROADCAST') {
+          // The new, simpler, and more robust way to broadcast
+          await ProviderFactory.broadcast(window.location.hostname, message.payload.prompt);
+          sendResponse({ status: 'broadcast_complete' });
+
+        } else if (message.type === 'EXECUTE_HARVEST') {
+          // Harvesting logic remains the same, as it's already robust
+          const data = await ContentStateDetector.waitForComplete(platformKey);
+          sendResponse({ status: 'completed', data });
+        }
+      } catch (error) {
+        console.error(`Conductor AI Error on ${platformKey}:`, error);
+        sendResponse({ status: 'failed', error: error.message });
+      }
+    };
+    handle();
+    return true; // Keep channel open for async response
+  });
+  console.log(`✅ Conductor AI: Listener setup complete for "${platformKey}" using ProviderFactory.`);
+}

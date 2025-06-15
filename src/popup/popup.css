@@ -95,8 +95,9 @@ fieldset legend {
   border-radius: 6px;
   padding: 10px;
   font-size: 12px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+  white-space: pre-wrap; /* Preserves whitespace, wraps at newlines and as needed */
+  overflow-wrap: break-word; /* Breaks long words to prevent overflow */
   max-height: 200px;
   overflow-y: auto;
+  overflow-x: auto;      /* This adds a horizontal scrollbar if needed */
 }

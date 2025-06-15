@@ -1,40 +1,49 @@
-// src/content/providers/ChatGPT.js (REPLACE the whole file)
-
+// src/content/providers/ChatGPT.js
 import { waitForElement } from '../primitives/helpers.js';
+import { BaseProvider } from './BaseProvider.js';
 
-export class ChatGPTAsk {
+export class ChatGPTAsk extends BaseProvider {
+  constructor() {
+    super({ baseTimeout: 10000 });
+  }
+
   static async broadcast(prompt) {
-    // We still use our robust selector to find the input element
-    const input = await waitForElement('textarea#prompt-textarea, textarea[placeholder="Ask anything"]');
+    const instance = new ChatGPTAsk();
+    return instance._broadcast(prompt);
+  }
+
+  async _broadcast(prompt) {
+    const input = await waitForElement(
+      '#prompt-textarea, p[data-placeholder="Ask anything"]',
+      this.baseTimeout
+    );
     
-    // --- THE CORE FIX ---
-    // 1. Focus the element to make it the active target for commands.
-    input.focus();
-    // 2. Clear any existing text.
-    input.value = ''; 
-    // 3. Use execCommand to visually insert the new text. This is much more reliable
-    //    for triggering the site's own event listeners.
-    document.execCommand('insertText', false, prompt);
-    // --- END OF CORE FIX ---
+    const editableContainer = input.id === 'prompt-textarea' ? input : input.parentElement;
+    editableContainer.focus();
+    editableContainer.textContent = prompt;
+    editableContainer.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
 
-    // Give the UI a moment to process the input and enable the button
-    await new Promise(resolve => setTimeout(resolve, 500)); 
-
-    try {
-      // Now, try to find the newly enabled button and click it
-      const button = await waitForElement('button[data-testid="send-button"]:not(:disabled)', 3000);
+    // Give the UI a moment to enable the button
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // --- THE CORE FIX: A MORE RELIABLE SUBMISSION STRATEGY ---
+    const button = document.querySelector('button[data-testid="send-button"]');
+    if (button && !button.disabled) {
       button.click();
-    } catch (e) {
-      // Fallback to the Enter key press if the button isn't found
-      console.warn("Could not click send button, falling back to Enter key press.");
-      const enterEvent = new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        bubbles: true,
-        cancelable: true,
-        shiftKey: false, 
-      });
-      input.dispatchEvent(enterEvent);
+    } else {
+      // If the button isn't immediately available, fallback to the Enter key
+      console.warn("ChatGPT button not immediately clickable, falling back to Enter key press.");
+      const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, shiftKey: false });
+      editableContainer.dispatchEvent(enterEvent);
     }
+
+    // --- NEW VALIDATION STEP ---
+    // Instead of waiting for the send button, we now wait for proof of submission:
+    // the "Stop generating" button's appearance.
+    await this.waitForCondition(() => {
+      return !!document.querySelector('[data-testid="stop-generating-button"]');
+    }, 5000, "Waiting for submission confirmation");
+    
+    // If we reach here, it means the prompt was successfully sent and the AI is processing.
   }
 }

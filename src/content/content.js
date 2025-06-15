@@ -1,44 +1,28 @@
-// src/content/content.js (REPLACE the whole file)
-
-import { ChatGPTAsk } from './providers/ChatGPT.js';
-import { ClaudeAsk } from './providers/Claude.js';
+// src/content/content.js
+import { ProviderFactory } from './providers/ProviderFactory.js';
 import { ContentStateDetector } from './primitives/ContentStateDetector.js';
 
 function identifyCurrentPlatform() {
   const { hostname } = window.location;
-  // FIX: Now correctly identifies 'chatgpt.com' OR 'openai.com'
-  if (hostname.includes('chatgpt.com') || hostname.includes('openai.com')) {
-    return 'chatgpt';
-  }
-  if (hostname.includes('claude.ai')) {
-    return 'claude';
-  }
+  if (hostname.includes('openai.com') || hostname.includes('chatgpt.com')) return 'chatgpt';
+  if (hostname.includes('claude.ai') || hostname.includes('console.anthropic.com')) return 'claude';
   return null;
 }
 
 const platformKey = identifyCurrentPlatform();
 
-const actions = {
-  chatgpt: {
-    broadcast: (prompt) => ChatGPTAsk.broadcast(prompt),
-    harvest: () => ContentStateDetector.waitForComplete('chatgpt'),
-  },
-  claude: {
-    broadcast: (prompt) => ClaudeAsk.broadcast(prompt),
-    harvest: () => ContentStateDetector.waitForComplete('claude'),
-  },
-};
-
 if (platformKey) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const handle = async () => {
       try {
-        const handler = actions[platformKey];
         if (message.type === 'EXECUTE_BROADCAST') {
-          await handler.broadcast(message.payload.prompt);
+          // The new, simpler, and more robust way to broadcast
+          await ProviderFactory.broadcast(window.location.hostname, message.payload.prompt);
           sendResponse({ status: 'broadcast_complete' });
+
         } else if (message.type === 'EXECUTE_HARVEST') {
-          const data = await handler.harvest();
+          // Harvesting logic remains the same, as it's already robust
+          const data = await ContentStateDetector.waitForComplete(platformKey);
           sendResponse({ status: 'completed', data });
         }
       } catch (error) {
@@ -49,5 +33,5 @@ if (platformKey) {
     handle();
     return true; // Keep channel open for async response
   });
-  console.log(`✅ Conductor AI: Listener setup complete for "${platformKey}".`);
+  console.log(`✅ Conductor AI: Listener setup complete for "${platformKey}" using ProviderFactory.`);
 }

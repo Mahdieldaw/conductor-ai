@@ -27,7 +27,7 @@ export class ContentStateDetector {
     return detectors[platform];
   }
 
-  static async waitForComplete(platform, timeout = 45000) {
+  static async waitForComplete(platform, timeout = 90000) {
     const detector = this.getDetector(platform);
     if (!detector) throw new Error(`No detector for ${platform}`);
 
@@ -39,7 +39,7 @@ export class ContentStateDetector {
           return content.trim();
         }
       } catch (e) { /* Ignore errors during polling */ }
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     throw new Error(`Timeout waiting for a complete response from ${platform}`);
   }

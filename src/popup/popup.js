@@ -1,3 +1,5 @@
+// src/popup/popup.js (REPLACE the whole file)
+
 import { MSG } from '../shared/messaging.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -5,26 +7,47 @@ document.addEventListener('DOMContentLoaded', () => {
   const promptInput = document.getElementById('prompt-input');
   const statusDisplay = document.getElementById('status-display');
   const resultsDisplay = document.getElementById('results-display');
+  const copyButton = document.getElementById('copy-button');
 
-  /**
-   * Listener for the 'Run Workflow' button. Gathers user input
-   * and sends it to the background service worker to start the process.
-   */
+  // --- NEW: Function to update the UI from a payload ---
+  const updateUI = (payload) => {
+    if (!payload) return;
+
+    statusDisplay.textContent = `Workflow ${payload.status}!`;
+    resultsDisplay.textContent = JSON.stringify(payload.results, null, 2);
+
+    runButton.disabled = false;
+    runButton.textContent = 'Run Workflow';
+
+    if (payload.results) {
+      copyButton.style.display = 'block';
+      copyButton.disabled = false;
+    }
+  };
+
+  // --- NEW: Function to restore state on load ---
+  const restoreLastState = () => {
+    chrome.storage.local.get(['lastWorkflowResult'], (storage) => {
+      if (storage.lastWorkflowResult) {
+        console.log('Restoring last workflow result.', storage.lastWorkflowResult);
+        updateUI(storage.lastWorkflowResult);
+      }
+    });
+  };
+
+  // The main 'click' listener for starting a workflow
   runButton.addEventListener('click', () => {
     const prompt = promptInput.value;
-    const platformNodes = document.querySelectorAll(
-      'input[name="platform"]:checked'
-    );
+    const platformNodes = document.querySelectorAll('input[name="platform"]:checked');
     const platforms = Array.from(platformNodes).map((node) => node.value);
 
     if (prompt && platforms.length > 0) {
-      // Update UI to reflect starting state
       statusDisplay.textContent = 'Starting workflow...';
       resultsDisplay.textContent = '';
       runButton.disabled = true;
       runButton.textContent = 'Running...';
+      copyButton.style.display = 'none';
 
-      // Send message to background script to kick off orchestration
       chrome.runtime.sendMessage({
         type: MSG.START_WORKFLOW,
         payload: { prompt, platforms },
@@ -34,22 +57,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  /**
-   * Listener for messages from the background script, specifically for
-   * updates about the workflow's status and results.
-   */
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // The listener for live updates from the background script
+  chrome.runtime.onMessage.addListener((message) => {
     if (message.type === MSG.WORKFLOW_UPDATE) {
-      const { payload } = message;
-
-      // Update UI with the final status and results
-      statusDisplay.textContent = `Workflow ${payload.status}!`;
-      resultsDisplay.textContent = JSON.stringify(payload.results, null, 2);
-
-      // Re-enable the button
-      runButton.disabled = false;
-      runButton.textContent = 'Run Workflow';
+      updateUI(message.payload);
     }
   });
+
+  // The listener for the copy button
+  copyButton.addEventListener('click', () => {
+    const resultsText = resultsDisplay.textContent;
+    navigator.clipboard.writeText(resultsText).then(() => {
+      copyButton.textContent = 'Copied!';
+      setTimeout(() => { copyButton.textContent = 'Copy Results'; }, 2000);
+    });
+  });
+
+  // --- NEW: Call restore function when the popup opens ---
+  restoreLastState();
 });
 
